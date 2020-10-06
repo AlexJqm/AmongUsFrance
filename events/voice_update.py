@@ -1,5 +1,6 @@
 import discord
 import pymongo
+import asyncio
 import time
 import json
 import os
@@ -15,6 +16,9 @@ load_dotenv(dotenv_path)
 
 servers = db_connect()
 server_dict = {'Alfa':'🇦','Bravo':'🇧','Charlie':'🇨','Delta':'🇩','Echo':'🇪','Foxtrot':'🇫','Golf':'🇬','Hotel':'🇭','India':'🇮','Juliett':'🇯','Kilo':'🇰','Lima':'🇱','Mike':'🇲','November':'🇳','Oscar':'🇴','Papa':'🇵','Quebec':'🇶','Romeo':'🇷','Sierra':'🇸','Tango':'🇹','Uniform':'🇺','Victor':'🇻','Whiskey':'🇼','X-ray':'🇽','Yankee':'🇾','Zulu':'🇿'}
+waiting_create = []
+waiting_auto = []
+waiting_join = []
 
 class VoiceUpdate(commands.Cog):
     def __init__(self, bot):
@@ -23,7 +27,6 @@ class VoiceUpdate(commands.Cog):
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         logs = discord.utils.get(member.guild.channels, name = "logs")
-        
         #position des vocaux par rapport au nombre de joueurs décroissants
         try:
             serveur_dict = {}
@@ -49,6 +52,10 @@ class VoiceUpdate(commands.Cog):
         #rejoindre un serveur automatiquement
         try:
             if after.channel.name == os.getenv("NAME_VOC_JOIN_AUTO"):
+                waiting_auto.append(member.name)
+                if waiting_auto[0] != member.name:
+                    await asyncio.sleep(waiting_auto.index(member.name)*3)
+
                 serveur_dict = {}
                 for key in server_dict.keys():
                     try:
@@ -68,11 +75,16 @@ class VoiceUpdate(commands.Cog):
                 servers.update_one({'voice_name': serveur_dict[0][0], 'finished': None}, {'$push': {'current_players': member.id}})
                 await member.edit(voice_channel = discord.utils.get(member.guild.channels, name = serveur_dict[0][0]))
                 await logs.send(f"🟢 Le joueur {member.mention} a rejoint le serveur {after.channel.name}.")
+                waiting_auto.remove(member.name)
         except: pass
         
         #rejoindre un serveur manuellement
         try:
             if after.channel.name in server_dict.keys() and servers.count_documents({"current_players":{"$in":[member.id]}}) == 0:
+                waiting_join.append(member.name)
+                if waiting_join[0] != member.name:
+                    await asyncio.sleep(waiting_join.index(member.name)*2)
+
                 if servers.count_documents({'voice_name': serveur_dict[0][0], 'finished': None, "ban_players":{"$in":[member.id]}}) == 1:
                     await member.edit(voice_channel = None)
                 await member.add_roles(discord.utils.get(member.guild.roles, name = after.channel.name))
@@ -80,11 +92,19 @@ class VoiceUpdate(commands.Cog):
                 if servers.count_documents({"current_players":{"$in":[member.id]}}) == 0:
                     servers.update_one({'voice_name': after.channel.name, 'finished': None}, {'$push': {'current_players': member.id}})
                 else: pass
+
+                waiting_join.remove(member.name)
         except: pass
         
         #créé un serveur
         try:
+            global waiting_list
             if after.channel.name == os.getenv("NAME_VOC_CREATE_AUTO"):
+
+                waiting_create.append(member.name)
+                if waiting_create[0] != member.name:
+                    await asyncio.sleep(waiting_create.index(member.name)*5)
+
                 data = servers.find({'finished': None})
                 
                 server_list = []
@@ -136,6 +156,7 @@ class VoiceUpdate(commands.Cog):
                 )
                 json_data = json.loads(db_server.to_json())
                 result = servers.insert_one(json_data)
+                waiting_create.remove(member.name)
         except: pass
         
         #quitté un serveur

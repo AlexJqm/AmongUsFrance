@@ -1,2 +1,0 @@
-# AmongUsFrance
-Among Us France
